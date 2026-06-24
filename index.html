@@ -195,10 +195,11 @@
     @page{margin:0;size:A4}
     *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
     header,.tabs,.panel,.mobile-toggle,.hbtns{display:none!important}
-    html,body{background:#fff;width:794px}
-    .app,.main{display:block}
-    .preview-wrap{padding:0;height:auto;overflow:visible;display:block;background:#fff}
-    .paper{box-shadow:none;width:794px;transform:none!important;margin:0 auto!important}
+    html,body{background:#fff!important;width:794px!important;margin:0!important}
+    .app,.main{display:block!important}
+    .preview-wrap{padding:0!important;height:auto!important;overflow:visible!important;display:block!important;background:#fff!important;width:794px!important}
+    .preview-wrap.hide-m{display:block!important}
+    .paper{box-shadow:none!important;width:794px!important;transform:none!important;margin:0 auto!important}
     .paper[style*="display:none"],.paper[style*="display: none"]{display:none!important}
     .r-modern,.r-classic,.r-minimal,.r-cover{min-height:1123px}
     .entry,.block{page-break-inside:avoid;break-inside:avoid}
@@ -504,18 +505,26 @@ function tplMinimal(d){
 
 /* ===== AI CONTENT GENERATION ===== */
 async function callAI(prompt){
-  const response=await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      model:"claude-sonnet-4-6",
-      max_tokens:1000,
-      messages:[{role:"user",content:prompt}]
-    })
-  });
+  let response;
+  try{
+    response=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:"claude-sonnet-4-6",
+        max_tokens:1000,
+        messages:[{role:"user",content:prompt}]
+      })
+    });
+  }catch(e){
+    throw new Error('AI_UNAVAILABLE');
+  }
+  if(!response.ok){throw new Error('AI_UNAVAILABLE');}
   const data=await response.json();
+  if(!data.content){throw new Error('AI_UNAVAILABLE');}
   return data.content.filter(b=>b.type==="text").map(b=>b.text).join("").trim();
 }
+const AI_HELP_MSG='The AI writing feature only works inside the Claude app preview, not on your own hosted website. To use AI on your GitHub site you need your own API key via a small backend — ask Claude to set this up. Everything else (templates, photo, PDF, saved resumes) works fine here.';
 
 async function aiSummary(){
   const btn=document.getElementById('ai-summary-btn');
@@ -538,7 +547,7 @@ Return ONLY the summary text, no preamble, no quotes, no headings.`;
     document.getElementById('f-summary').value=out;
     render();
   }catch(err){
-    alert('AI could not generate the summary. Check your internet connection and try again.');
+    alert(err.message==='AI_UNAVAILABLE'?AI_HELP_MSG:'Something went wrong generating the summary. Please try again.');
     console.error(err);
   }finally{btn.innerHTML=orig;btn.disabled=false;}
 }
@@ -559,8 +568,9 @@ Rough notes: ${e.desc||'(none — write generic but realistic bullets for this j
     e.desc=out;
     renderExpList();render();
   }catch(err){
-    alert('AI could not polish this. Check your internet connection and try again.');
+    alert(err.message==='AI_UNAVAILABLE'?AI_HELP_MSG:'Something went wrong. Please try again.');
     console.error(err);
+    btn.innerHTML=orig;btn.disabled=false;
   }
 }
 
@@ -591,7 +601,7 @@ Return ONLY the greeting and the paragraphs, separated by blank lines. No preamb
     document.getElementById('cl-text').value=out;
     renderCover();
   }catch(err){
-    alert('AI could not generate the cover letter. Check your internet connection and try again.');
+    alert(err.message==='AI_UNAVAILABLE'?AI_HELP_MSG:'Something went wrong generating the cover letter. Please try again.');
     console.error(err);
   }finally{btn.innerHTML=orig;btn.disabled=false;}
 }
@@ -628,16 +638,30 @@ function fileBase(){return (val('f-name')||'resume').replace(/[^a-z0-9]+/gi,'_')
 function onCoverTab(){return document.querySelector('.tab[data-tab="cover"]').classList.contains('active');}
 function downloadPDF(){
   const isCover=onCoverTab();
+  // On mobile, make sure the preview (not the edit form) is showing so print isn't blank
+  if(window.matchMedia('(max-width:900px)').matches){
+    mView('preview');
+  }
   document.title=fileBase()+(isCover?'_cover_letter':'_resume');
-  window.print();
-  setTimeout(()=>{document.title='Resume Forger';},1000);
+  setTimeout(()=>{
+    window.print();
+    setTimeout(()=>{document.title='Resume Forger';},1000);
+  },150);
 }
 async function shareWhatsApp(){
   const cname=val('f-name')||'there';
   const isCover=onCoverTab();
   const doc=isCover?'cover letter':'resume';
   const msg=`Hi ${cname}, here's your professional ${doc} from ${BRAND.name}. Please find the PDF attached. Let me know if you'd like any changes!`;
-  alert(`Step 1: Tap "Download PDF" first and save the ${doc}.\nStep 2: WhatsApp will open — pick your contact, tap 📎 attach, and choose the saved PDF.`);
+  // Try the phone's native share sheet — on many Android phones this lets you pick WhatsApp directly
+  if(navigator.share){
+    try{
+      await navigator.share({text:msg});
+      return;
+    }catch(e){ if(e.name==='AbortError') return; }
+  }
+  // Fallback: open WhatsApp with the message; PDF must be attached manually
+  alert(`Reminder: a website cannot attach a file into WhatsApp for you (phone security).\n\nStep 1: Tap "Download PDF" and save the ${doc}.\nStep 2: In WhatsApp, pick your contact, tap 📎 attach, and choose the saved PDF.`);
   window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
 }
 
