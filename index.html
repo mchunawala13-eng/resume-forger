@@ -390,11 +390,26 @@ function loadPhoto(ev){
   const file=ev.target.files[0]; if(!file)return;
   const reader=new FileReader();
   reader.onload=e=>{
-    state.photo=e.target.result;
-    const pv=document.getElementById('photo-preview');
-    pv.src=state.photo;pv.classList.remove('empty');
-    document.getElementById('photo-remove').style.display='block';
-    document.getElementById('photo-toggle').checked=true;state.showPhoto=true;render();
+    const img=new Image();
+    img.onload=()=>{
+      // Downscale large photos so they don't blow past localStorage limits
+      const MAX=600;
+      let w=img.width,h=img.height;
+      if(w>MAX||h>MAX){
+        if(w>h){h=Math.round(h*MAX/w);w=MAX;}
+        else{w=Math.round(w*MAX/h);h=MAX;}
+      }
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      state.photo=canvas.toDataURL('image/jpeg',0.85);
+      const pv=document.getElementById('photo-preview');
+      pv.src=state.photo;pv.classList.remove('empty');
+      document.getElementById('photo-remove').style.display='block';
+      document.getElementById('photo-toggle').checked=true;state.showPhoto=true;render();
+    };
+    img.onerror=()=>alert('Could not read that image. Please try a different photo.');
+    img.src=e.target.result;
   };
   reader.readAsDataURL(file);
 }
@@ -699,8 +714,13 @@ function saveResume(){
   const arr=getSaved();
   arr.unshift(snapshot());
   if(arr.length>30)arr.length=30; // keep last 30
-  setSaved(arr);
-  alert('Saved! You can reopen it anytime from "Saved".');
+  try{
+    setSaved(arr);
+    alert('Saved! You can reopen it anytime from "Saved".');
+  }catch(err){
+    alert('Could not save — your phone\'s storage for this app is full. Try deleting a couple of old saved resumes first (open "Saved" → Delete), then save again.');
+    console.error(err);
+  }
 }
 function openSaved(){
   const list=document.getElementById('savedList');
